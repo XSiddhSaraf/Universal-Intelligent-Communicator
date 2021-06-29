@@ -3,6 +3,9 @@ This project tries to combine knowledge, research papers and quotations of all p
 
 This software also helps someone who feels lonely, to have conversation to kill the lonliness and mental stress and simultaniouly gain some knowledge.
 
+
+![alt text](https://github.com/XSiddhSaraf/Universal-Intelligent-Communicator/blob/41a1a306da08012451c66a092d8dfb9ad09be82f/Project%20diagram%20and%20flow%20(2).jpg?raw=true)
+
 ## Tools/Technologies that is being used here:
 * Data Ingestion from various sources like - Websites containing quotations and stories, PDF, reasearch sites (free)
 * Storing them into a central replositoiry
