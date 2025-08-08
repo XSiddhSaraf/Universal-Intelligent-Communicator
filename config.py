@@ -113,7 +113,7 @@ AWS_CONFIG = {
 # API configuration
 API_CONFIG = {
     "host": "0.0.0.0",
-    "port": 5000,
+    "port": 8000,
     "debug": False,
     "cors_origins": ["http://localhost:3000", "http://127.0.0.1:3000"]
 }

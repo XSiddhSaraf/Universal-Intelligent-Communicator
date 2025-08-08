@@ -7,7 +7,8 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Dict, Any
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
+from pathlib import Path
 from flask_cors import CORS
 import json
 
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, origins=API_CONFIG['cors_origins'])
+CORS(app, origins=['*'], methods=['GET', 'POST', 'PUT', 'DELETE'], allow_headers=['Content-Type'])
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -40,6 +41,26 @@ def health_check():
         'timestamp': datetime.utcnow().isoformat(),
         'service': 'UnIC API'
     })
+
+@app.route('/test', methods=['GET'])
+def test_endpoint():
+    """Test endpoint for debugging"""
+    return jsonify({
+        'message': 'API is working!',
+        'timestamp': datetime.utcnow().isoformat()
+    })
+
+@app.route('/', methods=['GET'])
+def serve_web_interface():
+    """Serve the web interface"""
+    try:
+        web_path = Path(__file__).parent.parent / "web_interface" / "index.html"
+        if web_path.exists():
+            return send_file(web_path)
+        else:
+            return jsonify({'error': 'Web interface not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/chat', methods=['POST'])
 def chat():

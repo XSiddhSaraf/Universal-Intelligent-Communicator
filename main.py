@@ -258,8 +258,14 @@ speak "Hello world"    - Speak the text
             logger.error(f"Data ingestion failed: {e}")
             raise
     
-    def start_api_server(self, host: str = '0.0.0.0', port: int = 5000, debug: bool = False):
+    def start_api_server(self, host: str = None, port: int = None, debug: bool = False):
         """Start the API server"""
+        from config import API_CONFIG
+        
+        # Use config values if not provided
+        host = host or API_CONFIG['host']
+        port = port or API_CONFIG['port']
+        
         logger.info(f"Starting API server on {host}:{port}")
         app.run(host=host, port=port, debug=debug)
 
@@ -271,7 +277,7 @@ def main():
     parser.add_argument('--source', choices=['arxiv', 'quotes', 'all'], 
                        default='all', help='Data source for ingestion')
     parser.add_argument('--host', default='0.0.0.0', help='API server host')
-    parser.add_argument('--port', type=int, default=5000, help='API server port')
+    parser.add_argument('--port', type=int, help='API server port (default from config)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
     args = parser.parse_args()

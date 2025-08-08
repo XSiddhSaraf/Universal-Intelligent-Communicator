@@ -271,14 +271,14 @@
     <script>
         class UnICInterface {
             constructor() {
-                this.apiBase = 'http://localhost:5000/api';
+                this.apiBase = 'http://localhost:8000/api';
                 this.sessionId = this.generateSessionId();
                 this.isListening = false;
                 this.isSpeaking = false;
                 
                 this.initializeElements();
                 this.bindEvents();
-                this.updateStatus('Connected to UnIC');
+                this.testConnection();
             }
 
             initializeElements() {
@@ -308,6 +308,20 @@
                 return 'web_session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             }
 
+            async testConnection() {
+                try {
+                    const response = await fetch('http://localhost:8000/health');
+                    if (response.ok) {
+                        this.updateStatus('Connected to UnIC API');
+                    } else {
+                        this.updateStatus('API server error - check if server is running');
+                    }
+                } catch (error) {
+                    console.error('Connection test failed:', error);
+                    this.updateStatus('Cannot connect to API server - please start the server');
+                }
+            }
+
             async sendMessage() {
                 const message = this.messageInput.value.trim();
                 if (!message) return;
@@ -320,6 +334,7 @@
                 this.showTyping();
 
                 try {
+                    console.log('Sending message to:', `${this.apiBase}/chat`);
                     const response = await fetch(`${this.apiBase}/chat`, {
                         method: 'POST',
                         headers: {
@@ -331,7 +346,9 @@
                         })
                     });
 
+                    console.log('Response status:', response.status);
                     const data = await response.json();
+                    console.log('Response data:', data);
                     
                     if (response.ok) {
                         this.addMessage(data.response, 'bot', {
@@ -344,11 +361,11 @@
                             this.speakText(data.response);
                         }
                     } else {
-                        this.addMessage('Sorry, I encountered an error. Please try again.', 'bot');
+                        this.addMessage(`Error: ${data.error || 'Unknown error'}`, 'bot');
                     }
                 } catch (error) {
                     console.error('Error sending message:', error);
-                    this.addMessage('Sorry, I\'m having trouble connecting. Please check your connection.', 'bot');
+                    this.addMessage(`Connection error: ${error.message}`, 'bot');
                 } finally {
                     this.hideTyping();
                 }
