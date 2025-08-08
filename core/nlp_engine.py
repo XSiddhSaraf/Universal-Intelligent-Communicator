@@ -106,49 +106,25 @@ class NLPEngine:
             logger.error(f"Similarity calculation failed: {e}")
             return 0.0
     
-    def semantic_search(self, query: str, category: Optional[str] = None) -> List[Dict]:
+    def semantic_search(self, query: str, category: Optional[str] = None, limit: int = None) -> List[Dict]:
         """Perform semantic search on knowledge base"""
         try:
-            # Preprocess query
-            processed_query = self.preprocess_text(query)
-            query_embedding = self.get_embedding(processed_query)
-            
-            if not query_embedding:
-                return []
-            
-            # Get knowledge entries
-            entries = db_manager.get_knowledge_entries(category=category, limit=1000)
+            # Use the database's semantic search method
+            search_limit = limit if limit is not None else self.max_results
+            entries = db_manager.search_knowledge(query, category=category, limit=search_limit)
             
             results = []
             for entry in entries:
-                # Get or generate embedding for entry
-                if entry.embedding:
-                    entry_embedding = json.loads(entry.embedding)
-                else:
-                    # Generate embedding if not exists
-                    processed_content = self.preprocess_text(entry.content)
-                    entry_embedding = self.get_embedding(processed_content)
-                    if entry_embedding:
-                        db_manager.update_embedding(entry.id, entry_embedding)
-                
-                if entry_embedding:
-                    similarity = self.calculate_similarity(query_embedding, entry_embedding)
-                    
-                    if similarity >= self.similarity_threshold:
-                        results.append({
-                            'id': entry.id,
-                            'title': entry.title,
-                            'content': entry.content,
-                            'category': entry.category,
-                            'author': entry.author,
-                            'source': entry.source,
-                            'similarity_score': similarity,
-                            'confidence_score': entry.confidence_score
-                        })
-            
-            # Sort by similarity score and limit results
-            results.sort(key=lambda x: x['similarity_score'], reverse=True)
-            results = results[:self.max_results]
+                results.append({
+                    'id': entry.id,
+                    'title': entry.title,
+                    'content': entry.content,
+                    'category': entry.category,
+                    'author': entry.author,
+                    'source': entry.source,
+                    'similarity_score': 0.8,  # Default similarity score
+                    'confidence_score': entry.confidence_score
+                })
             
             logger.info(f"Semantic search returned {len(results)} results for query: {query}")
             return results

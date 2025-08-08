@@ -137,18 +137,47 @@ class DatabaseManager:
             raise
     
     def search_knowledge(self, query: str, category: Optional[str] = None, limit: int = 10) -> List[KnowledgeEntry]:
-        """Search knowledge entries by content"""
+        """Search knowledge entries by content using semantic similarity"""
         try:
+            from core.nlp_engine import nlp_engine
+            import json
+            import numpy as np
+            
+            # Get query embedding
+            query_embedding = nlp_engine.get_embedding(query)
+            
             with self.get_session() as session:
-                search_query = session.query(KnowledgeEntry).filter(
-                    KnowledgeEntry.content.contains(query)
+                # Get all entries with embeddings
+                entries_query = session.query(KnowledgeEntry).filter(
+                    KnowledgeEntry.embedding.isnot(None),
+                    KnowledgeEntry.is_processed == True
                 )
                 
                 if category:
-                    search_query = search_query.filter(KnowledgeEntry.category == category)
+                    entries_query = entries_query.filter(KnowledgeEntry.category == category)
                 
-                results = search_query.limit(limit).all()
-                logger.info(f"Search returned {len(results)} results for query: {query}")
+                entries = entries_query.all()
+                
+                if not entries:
+                    logger.info("No entries with embeddings found")
+                    return []
+                
+                # Calculate similarities
+                similarities = []
+                for entry in entries:
+                    try:
+                        entry_embedding = json.loads(entry.embedding)
+                        similarity = nlp_engine.calculate_similarity(query_embedding, entry_embedding)
+                        similarities.append((entry, similarity))
+                    except Exception as e:
+                        logger.warning(f"Failed to calculate similarity for entry {entry.id}: {e}")
+                        continue
+                
+                # Sort by similarity and return top results
+                similarities.sort(key=lambda x: x[1], reverse=True)
+                results = [entry for entry, similarity in similarities[:limit]]
+                
+                logger.info(f"Semantic search returned {len(results)} results for query: {query}")
                 return results
                 
         except Exception as e:

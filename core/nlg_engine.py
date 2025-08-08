@@ -136,15 +136,19 @@ class NLGEngine:
     
     def _is_greeting(self, query: str) -> bool:
         """Check if query is a greeting"""
+        import re
         greetings = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'greetings']
         query_lower = query.lower()
-        return any(greeting in query_lower for greeting in greetings)
+        # Use word boundaries to avoid partial matches
+        return any(re.search(r'\b' + re.escape(greeting) + r'\b', query_lower) for greeting in greetings)
     
     def _is_farewell(self, query: str) -> bool:
         """Check if query is a farewell"""
+        import re
         farewells = ['goodbye', 'bye', 'see you', 'farewell', 'thank you', 'thanks']
         query_lower = query.lower()
-        return any(farewell in query_lower for farewell in farewells)
+        # Use word boundaries to avoid partial matches
+        return any(re.search(r'\b' + re.escape(farewell) + r'\b', query_lower) for farewell in farewells)
     
     def _generate_no_results_response(self, query: str, category: str) -> str:
         """Generate response when no search results are found"""
