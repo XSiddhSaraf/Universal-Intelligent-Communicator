@@ -115,10 +115,13 @@ class NLPEngine:
             
             results = []
             for entry in entries:
+                # Get the actual content from the database
+                content = entry.content if entry.content else f"Title: {entry.title}"
+                
                 results.append({
                     'id': entry.id,
                     'title': entry.title,
-                    'content': entry.content,
+                    'content': content,
                     'category': entry.category,
                     'author': entry.author,
                     'source': entry.source,
@@ -299,7 +302,16 @@ class NLPEngine:
             entities = self.extract_entities(query)
             
             # Perform semantic search
-            search_results = self.semantic_search(query, category=category)
+            # For technical queries, search across all categories
+            technical_keywords = ['machine learning', 'artificial intelligence', 'ai', 'neural network', 'deep learning', 'algorithm', 'computer science', 'technology', 'science', 'research']
+            is_technical_query = any(keyword in query.lower() for keyword in technical_keywords)
+            
+            if is_technical_query:
+                # Search across all categories for technical queries
+                search_results = self.semantic_search(query, category=None)
+            else:
+                # Use categorized search for other queries
+                search_results = self.semantic_search(query, category=category)
             
             # Generate response context
             context = {

@@ -59,10 +59,13 @@
         .chat-messages {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 10px;
             background: #f8f9fa;
             border-radius: 10px;
             margin-bottom: 20px;
+            max-height: calc(100vh - 300px);
+            scroll-behavior: smooth;
         }
 
         .message {
@@ -397,12 +400,18 @@
                 messageDiv.appendChild(metaDiv);
 
                 this.chatMessages.appendChild(messageDiv);
-                this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+                
+                // Force scroll to bottom with a small delay to ensure DOM update
+                setTimeout(() => {
+                    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+                }, 10);
             }
 
             showTyping() {
                 this.typingIndicator.classList.add('show');
-                this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+                setTimeout(() => {
+                    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+                }, 10);
             }
 
             hideTyping() {
