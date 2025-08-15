@@ -7,12 +7,13 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Dict, Any
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, session
 from pathlib import Path
 from flask_cors import CORS
 import json
+from functools import wraps
 
-from config import API_CONFIG, LOGGING_CONFIG
+from config import API_CONFIG, LOGGING_CONFIG, AUTH_CONFIG
 from core.database import db_manager
 from core.nlp_engine import nlp_engine
 from core.nlg_engine import nlg_engine
@@ -31,7 +32,47 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, origins=['*'], methods=['GET', 'POST', 'PUT', 'DELETE'], allow_headers=['Content-Type'])
+app.secret_key = 'your-secret-key-change-in-production'  # Change this in production!
+CORS(app, origins=['*'], methods=['GET', 'POST', 'PUT', 'DELETE'], allow_headers=['Content-Type', 'Authorization'])
+
+# Authentication decorator
+def require_auth(f):
+    """Decorator to require authentication for endpoints"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check for session token in Authorization header or session
+        auth_header = request.headers.get('Authorization')
+        session_token = None
+        
+        if auth_header and auth_header.startswith('Bearer '):
+            session_token = auth_header.split(' ')[1]
+        elif 'session_token' in session:
+            session_token = session['session_token']
+        
+        if not session_token:
+            return jsonify({'error': 'Authentication required', 'code': 'AUTH_REQUIRED'}), 401
+        
+        # Validate session
+        user = db_manager.validate_session(session_token)
+        if not user:
+            return jsonify({'error': 'Invalid or expired session', 'code': 'INVALID_SESSION'}), 401
+        
+        # Add user to request context
+        request.current_user = user
+        return f(*args, **kwargs)
+    
+    return decorated_function
+
+def require_admin(f):
+    """Decorator to require admin privileges"""
+    @wraps(f)
+    @require_auth
+    def decorated_function(*args, **kwargs):
+        if not request.current_user.is_admin:
+            return jsonify({'error': 'Admin privileges required', 'code': 'ADMIN_REQUIRED'}), 403
+        return f(*args, **kwargs)
+    
+    return decorated_function
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -62,7 +103,146 @@ def serve_web_interface():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# Authentication endpoints
+
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    """User registration endpoint"""
+    try:
+        if not AUTH_CONFIG['allow_registration']:
+            return jsonify({'error': 'Registration is disabled'}), 403
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request data is required'}), 400
+        
+        username = data.get('username', '').strip()
+        email = data.get('email', '').strip()
+        password = data.get('password', '')
+        
+        # Validation
+        if not username or len(username) < 3:
+            return jsonify({'error': 'Username must be at least 3 characters long'}), 400
+        
+        if not email or '@' not in email:
+            return jsonify({'error': 'Valid email is required'}), 400
+        
+        if not password or len(password) < AUTH_CONFIG['password_min_length']:
+            return jsonify({'error': f'Password must be at least {AUTH_CONFIG["password_min_length"]} characters long'}), 400
+        
+        try:
+            user_id = db_manager.create_user(username, email, password)
+            logger.info(f"New user registered: {username}")
+            
+            return jsonify({
+                'message': 'User registered successfully',
+                'user_id': user_id,
+                'username': username,
+                'requires_approval': AUTH_CONFIG['require_admin_approval']
+            }), 201
+            
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 409
+            
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        return jsonify({'error': 'Registration failed'}), 500
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """User login endpoint"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request data is required'}), 400
+        
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+        
+        if not username or not password:
+            return jsonify({'error': 'Username and password are required'}), 400
+        
+        # Authenticate user
+        user = db_manager.authenticate_user(username, password)
+        if not user:
+            return jsonify({'error': 'Invalid credentials'}), 401
+        
+        # Create session
+        session_token = db_manager.create_session(
+            user.id,
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent', ''),
+            expires_hours=AUTH_CONFIG['session_timeout_hours']
+        )
+        
+        # Store in session
+        session['session_token'] = session_token
+        session['user_id'] = user.id
+        
+        return jsonify({
+            'message': 'Login successful',
+            'session_token': session_token,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'is_admin': user.is_admin,
+                'last_login': user.last_login.isoformat() if user.last_login else None
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return jsonify({'error': 'Login failed'}), 500
+
+@app.route('/api/auth/logout', methods=['POST'])
+@require_auth
+def logout():
+    """User logout endpoint"""
+    try:
+        # Get session token
+        auth_header = request.headers.get('Authorization')
+        session_token = None
+        
+        if auth_header and auth_header.startswith('Bearer '):
+            session_token = auth_header.split(' ')[1]
+        elif 'session_token' in session:
+            session_token = session['session_token']
+        
+        if session_token:
+            db_manager.invalidate_session(session_token)
+        
+        # Clear session
+        session.clear()
+        
+        return jsonify({'message': 'Logout successful'})
+        
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        return jsonify({'error': 'Logout failed'}), 500
+
+@app.route('/api/auth/me', methods=['GET'])
+@require_auth
+def get_current_user():
+    """Get current user information"""
+    try:
+        user = request.current_user
+        return jsonify({
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'is_admin': user.is_admin,
+                'created_at': user.created_at.isoformat(),
+                'last_login': user.last_login.isoformat() if user.last_login else None
+            }
+        })
+    except Exception as e:
+        logger.error(f"Get current user error: {e}")
+        return jsonify({'error': 'Failed to get user info'}), 500
+
 @app.route('/api/chat', methods=['POST'])
+@require_auth
 def chat():
     """Main chat endpoint"""
     try:
@@ -75,6 +255,18 @@ def chat():
         
         # Generate response
         response_data = nlg_engine.generate_conversation_response(message, session_id)
+        
+        # Store conversation with user_id
+        conversation_data = {
+            'session_id': session_id,
+            'user_id': request.current_user.id,
+            'user_message': message,
+            'bot_response': response_data['response'],
+            'category': response_data['category'],
+            'confidence_score': response_data['confidence_score'],
+            'sources_used': json.dumps(response_data.get('sources_used', []))
+        }
+        db_manager.add_conversation(conversation_data)
         
         return jsonify({
             'response': response_data['response'],
@@ -89,6 +281,7 @@ def chat():
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/search', methods=['POST'])
+@require_auth
 def search():
     """Search knowledge base"""
     try:
@@ -113,6 +306,7 @@ def search():
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/ingest', methods=['POST'])
+@require_admin
 def ingest_data():
     """Trigger data ingestion"""
     try:
@@ -145,6 +339,7 @@ def ingest_data():
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/upload', methods=['POST'])
+@require_auth
 def upload_file():
     """Upload and process files"""
     try:
@@ -201,11 +396,19 @@ def get_statistics():
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/conversations/<session_id>', methods=['GET'])
+@require_auth
 def get_conversation_history(session_id):
     """Get conversation history for a session"""
     try:
         limit = request.args.get('limit', 50, type=int)
-        conversations = db_manager.get_conversation_history(session_id, limit=limit)
+        
+        # Get conversations for the current user only
+        from core.database import Conversation
+        with db_manager.get_session() as db_session:
+            conversations = db_session.query(Conversation).filter(
+                Conversation.session_id == session_id,
+                Conversation.user_id == request.current_user.id
+            ).order_by(Conversation.timestamp.desc()).limit(limit).all()
         
         history = []
         for conv in conversations:
@@ -229,6 +432,7 @@ def get_conversation_history(session_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/voice/speak', methods=['POST'])
+@require_auth
 def speak_text():
     """Text-to-speech endpoint"""
     try:
@@ -249,6 +453,7 @@ def speak_text():
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/voice/listen', methods=['POST'])
+@require_auth
 def listen_speech():
     """Speech-to-text endpoint"""
     try:
@@ -279,6 +484,7 @@ def get_voice_info():
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/voice/settings', methods=['POST'])
+@require_auth
 def set_voice_settings():
     """Set voice properties"""
     try:
@@ -299,6 +505,7 @@ def set_voice_settings():
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/analyze', methods=['POST'])
+@require_auth
 def analyze_text():
     """Analyze text comprehensively"""
     try:
@@ -324,6 +531,7 @@ def analyze_text():
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/knowledge', methods=['GET'])
+@require_auth
 def get_knowledge_entries():
     """Get knowledge entries with filtering"""
     try:

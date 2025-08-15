@@ -123,4 +123,15 @@ FILE_CONFIG = {
     "supported_formats": [".pdf", ".txt", ".docx", ".doc", ".xlsx", ".csv"],
     "max_file_size": 50 * 1024 * 1024,  # 50MB
     "encoding": "utf-8"
+}
+
+# Authentication configuration
+AUTH_CONFIG = {
+    "session_timeout_hours": 24,
+    "require_email_verification": False,
+    "password_min_length": 6,
+    "max_login_attempts": 5,
+    "login_attempt_timeout_minutes": 15,
+    "allow_registration": True,
+    "require_admin_approval": False
 } 
